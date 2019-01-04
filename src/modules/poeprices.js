@@ -20,21 +20,30 @@ class PoePrices {
       var parameters = querystring.stringify({ i: Base64.encode(itemText), l: config.get("league"), s: "xenontrade" });
       var parsedParams = querystring.parse(parameters);
 
-      request(url + parameters, {json: true})
-      .then((response) => {
-        if(!PoePrices.hasAllKeys(response) || response.error !== 0) {
-          var requestObject = { request: { parameters: parsedParams, itemText }, response };
+      doRequestWithRetries();
 
-          log.warn("Request to poeprices.info failed. Received an empty response.\n" + JSON.stringify(requestObject, null, 4));
-          reject(new Error("Request to <b>poeprices.info</b> failed. Received an empty response."));
-        } else {
-          resolve({encodedItemText: parsedParams.i, price: response});
-        }
-      })
-      .catch((error) => {
-        log.warn("Request to poeprices.info failed.\n" + JSON.stringify(error, null, 4));
-        reject(new Error("Request to <b>poeprices.info</b> failed. " + error.error));
-      });
+      function doRequestWithRetries(retryCount = 0, retryLimit = 5, retryTimeout = 1000) {
+        request(url + parameters, {json: true})
+        .then((response) => {
+          if(!PoePrices.hasAllKeys(response) || response.error !== 0) {
+            var requestObject = { request: { parameters: parsedParams, itemText }, response };
+
+            log.warn("Request to poeprices.info failed. Received an empty response.\n" + JSON.stringify(requestObject, null, 4));
+            reject(new Error("Request to <b>poeprices.info</b> failed. Received an empty response."));
+          } else {
+            resolve({encodedItemText: parsedParams.i, price: response});
+          }
+        })
+        .catch((error) => {
+          if (error.statusCode === 403 && retryCount < retryLimit) {
+            log.warn("Request to poeprices.info failed with error code 403. Retrying...");
+            setTimeout(() => doRequestWithRetries(retryCount + 1), retryTimeout);
+          } else {
+            log.warn("Request to poeprices.info failed.\n" + JSON.stringify(error, null, 4));
+            reject(new Error(`Request to <b>poeprices.info</b> failed (code ${error.statusCode}).`));
+          }
+        });
+      }
     });
   }
 
